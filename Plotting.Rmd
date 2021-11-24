@@ -1,0 +1,286 @@
+---
+title: "TIS_plotting"
+author: "A. Kvist"
+date: "18/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(ggrepel)
+library(readxl)
+library(grDevices)
+library(grid)
+```
+```{r}
+Plotting_data <- read_excel("Plotting_data.xlsx")
+data <- as_tibble(Plotting_data)
+data <- rename(data, Input = Input_1)
+data <- data %>% arrange(start)
+data <- data %>%
+  mutate(index_input = Input/(0.9*gene_length),
+         index_output1 = Output_1/(0.9*gene_length),
+         index_output2 = Output_2/(0.9*gene_length),
+         count = c(1:5983))
+
+data_long <- data %>% 
+  select(id, index_input, index_output1, index_output2) %>% 
+  pivot_longer(cols = -id, names_to = "library", values_to = "index_value") 
+
+data_long <- data_long  %>% filter(index_value>0)
+
+stat <- data_long %>% group_by(library) %>%
+  summarise(mean = mean(index_value),
+            sd = sd(index_value),
+            n = n())
+
+stat <- data.frame(stat)
+
+data <- data %>%
+  mutate(z_stat_input = if_else(Input>0,(index_input-mean(index_input))/sd(index_input),0),
+         z_stat_output1 = if_else(Output_1>0,(index_output1-mean(index_output1))/sd(index_output1),0),
+         z_stat_output2 = if_else(Output_2>0,(index_output2-mean(index_output2))/sd(index_output2),0),
+         input_pvalue_adj = stat[1,4]*pnorm(z_stat_input, 0, 1, FALSE),
+         output1_pvalue_adj = stat[2,4]*pnorm(z_stat_output1, 0, 1, FALSE),
+         output2_pvalue_adj = stat[3,4]*pnorm(z_stat_output2, 0, 1, FALSE),
+         input_significant = if_else(input_pvalue_adj<0.05,"yes","no"),
+         output1_significant = if_else(output1_pvalue_adj<0.05,"yes","no"),
+         output2_significant = if_else(output2_pvalue_adj<0.05,"yes","no"))
+
+label_output1 <- data %>%
+  arrange(desc(index_output1)) %>%
+  .[1:12,]
+
+label_output1[12,3] = " "
+label_output1[11,3] = " "
+
+p1 <- data %>%
+  ggplot(aes(x=count, y=z_stat_output1, color=output1_significant)) +
+  geom_point() +
+  ggtitle("Output Library 1") +
+  xlab("Gene number") + 
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.position = "none",
+        plot.margin = unit(c(-0.2,0.2,0.2,0.2), "cm"),
+        plot.title = element_text(hjust = 0.5, vjust = -12.5, size = 11, face="bold")) +
+  geom_hline(yintercept = 4.04, lty=2, color="black") +
+  scale_color_manual(values = c("yes"="cyan3", "no"="black")) +
+  scale_y_continuous(limits=c(-0.2,47)) +
+  geom_text_repel(data = label_output1,color = "cyan3", aes(label = gene_name)) +
+  annotate("text",x=5500,y=7,label="PA14_60240",col="cyan3") +
+  annotate("text",x=2975,y=7,label="PA14_29330",col="cyan3") +
+  annotate("rect",xmin=2250,xmax=3750,ymin=42,ymax=47,fill="white")
+
+label_output2 <- data %>%
+  arrange(desc(index_output2)) %>%
+  .[1:8,]
+
+p2 <- data %>%
+  ggplot(aes(x=count, y=z_stat_output2, color=output2_significant)) +
+  geom_point() +
+  ggtitle("Output Library 2") +
+  xlab("Gene number") + 
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.position = "none",
+        plot.margin = unit(c(-0.2,0.2,0.2,0.2), "cm"),
+        plot.title = element_text(hjust = 0.5, vjust = -12.5, size = 11, face="bold")) +
+  geom_hline(yintercept = 4.04, lty=2, color="black") +
+  scale_color_manual(values = c("yes"="cyan3", "no"="black")) +
+  scale_y_continuous(limits=c(-0.2,47)) +
+  geom_text_repel(data = label_output2,color = "cyan3", aes(label = gene_name)) +
+  annotate("rect",xmin=2250,xmax=3750,ymin=42,ymax=47,fill="white")
+
+title_out = textGrob("Insertion Maps", hjust = 0.415, vjust = 2, gp = gpar(fontsize = 15, fontface = 'bold'))
+title_out <- arrangeGrob(title_out,zeroGrob(),
+                         widths = unit(1,'npc'),
+                         heights = unit(c(0.6,1),c('cm','npc')),
+                         as.table = FALSE)
+
+left_out = textGrob("Z Score", hjust = 3.75, rot = 90, gp = gpar(fontsize = 12, fontface = 'bold'))
+
+set.seed(3)
+g <- arrangeGrob(p1,p2, ncol=1, nrow=2, left = left_out, top = title_out)
+ggsave(file="Insertion_Maps_Outputs_Zscore.png",g)
+
+label_input <- data %>%
+  arrange(desc(index_input)) %>%
+  .[1:14,]
+
+label_input[8,3] = " "
+label_input[9,3] = "PA14_58710"
+label_input[10,3] = " "
+label_input[11,3] = " "
+label_input[12,3] = " "
+label_input[13,3] = " "
+label_input[14,3] = " "
+
+p3 <- data %>%
+  ggplot(aes(x=count, y=z_stat_input, color=input_significant)) +
+  geom_point() +
+  ggtitle("Input Library") +
+  xlab("Gene number") + 
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.position = "none",
+        plot.margin = unit(c(-0.2,0.2,0.2,0.2), "cm"),
+        plot.title = element_text(hjust = 0.5, vjust = -12.5, size = 11, face="bold")) +
+  geom_hline(yintercept = 4.22, lty=2, color="black") +
+  scale_color_manual(values = c("yes"="cyan3", "no"="black")) +
+  scale_y_continuous(limits=c(-0.6,47)) +
+  annotate("text",x=5860,y=8,label="rnk",col="cyan3") +
+  annotate("text",x=4985,y=7.85,label="pilD",col="cyan3") +
+  annotate("text",x=2950,y=11,label="PA14_35730",col="cyan3") +
+  annotate("text",x=1985,y=9.5,label="PA14_21770",col="cyan3") +
+  annotate("text",x=1000,y=8.6,label="PA14_00630",col="cyan3") +
+  annotate("segment", x = 125, xend = 475, y = 9.4, yend = 8.6, colour = "cyan3") +
+  geom_text_repel(data = label_input,color = "cyan3", aes(label = gene_name)) +
+  annotate("rect",xmin=2250,xmax=3750,ymin=42,ymax=47,fill="white")
+
+pdummy <- data %>%
+  ggplot(aes(x=count, y=z_stat_output1, color=output1_significant)) +
+  geom_point() +
+  ggtitle("DUMMY") +
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5, vjust = -12.5, size = 11, face="bold")) +
+  scale_color_manual(values = c("yes"="cyan3", "no"="black")) +
+  scale_y_continuous(limits=c(-0.2,47)) +
+  annotate("rect",xmin=2250,xmax=3750,ymin=42,ymax=47,fill="white")
+
+bot_in = textGrob("Gene number", vjust = -28, gp = gpar(fontsize = 12, fontface = 'bold'))
+left_in = textGrob("Z Score", hjust = 2 ,rot = 90, gp = gpar(fontsize = 12, fontface = 'bold'))
+
+set.seed(1)
+g <- arrangeGrob(p3, pdummy, ncol=1, nrow=2,left = left_in, bottom = bot_in)
+ggsave(file="Insertion_Map_Input_Zscore.png",g)
+```
+
+
+```{r}
+label_output1 <- data %>%
+  arrange(desc(index_output1)) %>%
+  .[1:12,]
+
+label_output1[12,3] = ""
+label_output1[11,3] = ""
+
+p1 <- data %>%
+  ggplot(aes(x=count, y=index_output1)) +
+  geom_point() +
+  ggtitle("Output Library 1") +
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        plot.margin = unit(c(-0.2,0.2,0.2,0.2), "cm"),
+        plot.title = element_text(hjust = 0.5, vjust = -14, size = 11, face="bold")) +
+  scale_y_continuous(limits=c(0,0.54)) +
+  geom_text_repel(data = label_output1, aes(label = gene_name)) +
+  annotate("text",x=5450,y=0.056,label="PA14_60240",col="black") +
+  annotate("text",x=2930,y=0.056,label="PA14_29330",col="black") +
+  annotate("rect",xmin=2250,xmax=3750,ymin=0.47,ymax=0.52,fill="white")
+  
+label_output2 <- data %>%
+  arrange(desc(index_output2)) %>%
+  .[1:10,]
+
+label_output2[9,3] = ""
+
+p2 <- data %>%
+  ggplot(aes(x=count, y=index_output2)) +
+  geom_point() +
+  ggtitle("Output Library 2")+
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        plot.margin = unit(c(-0.2,0.2,0.2,0.2), "cm"),
+        plot.title = element_text(hjust = 0.5, vjust = -14, size = 11, face="bold")) +
+  scale_y_continuous(limits=c(0,0.54)) +
+  geom_text_repel(data = label_output2, aes(label = gene_name)) +
+  annotate("text",x=2780,y=0.06,label="PA14_40860",col="black") +
+  annotate("rect",xmin=2250,xmax=3750,ymin=0.47,ymax=0.52,fill="white")
+
+###### Arrange Plots ######  
+    
+title_out = textGrob("Insertion Maps", hjust = 0.415, vjust = 2, gp = gpar(fontsize = 15, fontface = 'bold'))
+title_out <- arrangeGrob(title_out,zeroGrob(),
+                         widths = unit(1,'npc'),
+                         heights = unit(c(0.6,1),c('cm','npc')),
+                         as.table = FALSE)
+
+left_out = textGrob("Insertion index", hjust = 2, rot = 90, gp = gpar(fontsize = 12, fontface = 'bold'))
+
+set.seed(3)
+g <- arrangeGrob(p1,p2, ncol=1, nrow=2, left = left_out, top = title_out)
+  ggsave(file="Insertion_Maps_Outputs_Insertion_Index.png",g)
+
+###### Input Plot ######
+  
+label_input <- data %>%
+  arrange(desc(index_input)) %>%
+  .[1:14,]
+
+label_input[7,3] = " "  
+label_input[8,3] = " "
+label_input[9,3] = "PA14_58710"
+label_input[10,3] = " "
+label_input[11,3] = " "
+label_input[12,3] = " "
+label_input[13,3] = " "
+label_input[14,3] = " "
+
+p3 <- data %>%
+  ggplot(aes(x=count, y=index_input)) +
+  geom_point() +
+  ggtitle("Input Library") +
+  xlab("Gene number") +
+  theme_bw() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.margin = unit(c(-0.2,0.2,0.2,0.2), "cm"),
+        plot.title = element_text(hjust = 0.5, vjust = -15, size = 11, face="bold")) +
+  scale_y_continuous(limits=c(0,0.54)) +
+  geom_text_repel(data = label_input, aes(label = gene_name)) +
+  annotate("text",x=5860,y=0.08,label="rnk",col="black") +
+  annotate("text",x=2950,y=0.1,label="PA14_35730",col="black") +
+  annotate("text",x=1985,y=0.0895,label="PA14_21770",col="black") +
+    annotate("text",x=3900,y=0.075,label="PA14_54750",col="black") +
+  annotate("text",x=5000,y=0.068,label="pilD",col="black") +
+  annotate("text",x=1000,y=0.0759,label="PA14_00630",col="black") +
+  annotate("segment", x = 125, xend = 475, y = 0.0785, yend = 0.0759, colour = "black") +
+  annotate("rect",xmin=2200,xmax=3800,ymin=0.47,ymax=0.52,fill="white")
+
+pdummy <- data %>%
+  ggplot(aes(x=count, y=z_stat_output1, color=output1_significant)) +
+  geom_point() +
+  ggtitle("DUMMY") +
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5, vjust = -12.5, size = 11, face="bold")) +
+  scale_color_manual(values = c("yes"="cyan3", "no"="black")) +
+  scale_y_continuous(limits=c(-0.2,47)) +
+  annotate("rect",xmin=2250,xmax=3750,ymin=42,ymax=47,fill="white")
+
+bot_in = textGrob("Gene number", vjust = -28, gp = gpar(fontsize = 12, fontface = 'bold'))
+left_in = textGrob("Z Score", hjust = 2 ,rot = 90, gp = gpar(fontsize = 12, fontface = 'bold'))
+
+set.seed(1)
+g <- arrangeGrob(p3, pdummy, ncol=1, nrow=2,left = left_in, bottom = bot_in)
+ggsave(file="Insertion_Map_Input_Insertion_Index.png",g)
+```

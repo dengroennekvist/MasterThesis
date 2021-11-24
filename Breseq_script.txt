@@ -1,0 +1,4 @@
+parallel --xapply " breseq -r PA14.gb -r RK2.gb -o Breseq_full/{} -n {} -j 24 -l 100 Order352Sample{}_R1_PhiXCleaned.fq.gz Order352Sample{}_R2_PhiXCleaned.fq.gz " :::: Samples.list
+
+gdtools COMPARE -o Breseq_full/compare.html -r PA14.gb -r RK2.gb Breseq_full/0*/output/output.gd
+
